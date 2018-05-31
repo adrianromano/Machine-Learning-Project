@@ -1,0 +1,128 @@
+---
+title: "Practical Machine Learning Project"
+author: "Adrian R Angkawijaya"
+date: "5/29/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## *Executive Summary*
+
+This project is the course project for the Practical Machine Learning course by Coursera. The goal of the project is to build a machine learning prediction model that predicts whether a weight lifting exercise is perform correctly or not. The participants were instructed to perform the exercise either properly or incorrectly recorded in the "classe" variable of the data. The value 'A' represents the correct way of exercising while 'B', 'C', 'D', 'E' represent the incorrect ways. More information can be found [here](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har)
+
+For this project, I compare three different machine learning algorithms with 5-fold cross validation and choose one that has the best out of sample accuracy for the prediction. The models use for the projects are as follows: 
+
+1. Decision Trees with CART (rpart)
+2. Gradient Boosting Trees (gbm)
+3. Random Forest Decision Trees (rf)
+
+*Random Forest Model yields the best out of sample accuracy of about 99.3% so we use this model for the prediction.*
+
+## *Data Preparation*
+
+**Here we download and read the csv files for the given training and test data of the project.**
+
+The train data is used for the analysis which is then evaluated with the test data. We set the empty values, NA, and #DIV/0! as NA values.
+```{r}
+if (!file.exists("Courseradata")) {
+    dir.create("Courseradata")
+}
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(trainUrl, destfile = "/Users/adrianromano/Downloads/Courseradata/trainFile.csv", method = "curl")
+download.file(testUrl, destfile = "/Users/adrianromano/Downloads/Courseradata/testFile.csv", method = "curl")
+
+trainData <- read.csv("/Users/adrianromano/Downloads/Courseradata/trainFile.csv", na.strings = c("", "NA", "#DIV/0!"))
+testData <- read.csv("/Users/adrianromano/Downloads/Courseradata/testFile.csv", na.strings = c("", "NA", "#DIV/0!"))
+```
+
+**Here we check the dimensions and see the total number of NA values for both data.**
+```{r}
+dim(trainData)
+dim(testData)
+sum(is.na(trainData))
+sum(is.na(testData))
+```
+* *The training data is made up of 19622 observations on 160 columns with 1925102 NA values.*
+* *The test data is made up of 5885 observations on 160 columns with 2000 NA values.*
+
+There are a lot of NA values in both data so we remove the variables containing NA values and also some that are not important to include for the prediction such as username and timestamps.
+```{r}
+trainData <- trainData[, colSums(is.na(trainData)) == 0]
+testData <- testData[, colSums(is.na(testData)) == 0]
+trainData <- trainData[, -c(1:7)]
+testData <- testData[, -c(1:7)]
+dim(trainData)
+dim(testData)
+```
+* *We now just left with 53 variables in each data.*
+
+**Here we see the Near Zero Variance to check if there are further features to remove.**
+```{r}
+library(caret)
+nzv <- nearZeroVar(trainData, saveMetrics = TRUE)
+nzv
+```
+* *Looks like there are no more variables to remove so we can move on to building the model.*
+
+## *Model Building*
+
+We further split the training set into another train set and test set. Three models are build to compare their out of sample accuracy and the best one is used for the prediction. We also do cross validation with 5-fold for the models.
+
+**We split the data into 70% training set and 30% test set**
+```{r}
+set.seed(1995)
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+training <- trainData[inTrain, ]
+testing <- trainData[-inTrain, ]
+```
+
+**Decision Tree Model**
+```{r}
+library(rpart)
+set.seed(1995)
+cartFit <- train(classe ~ ., method = "rpart", trControl = trainControl(method = "cv", number = 5), data = training)
+cartPred <- predict(cartFit, newdata = testing)
+cartCM <- confusionMatrix(cartPred, testing$classe)
+cartCM$table
+```
+
+**Gradient Boosting Tree Model**
+```{r}
+library(gbm)
+set.seed(1995)
+gbmFit<- train(classe ~ ., method = "gbm", data = training, trControl = trainControl(method = "cv", number = 5), verbose = FALSE)
+gbmPred<- predict(gbmFit, newdata = testing)
+gbmCM <- confusionMatrix(gbmPred, testing$classe)
+gbmCM$table
+```
+
+**Random Forest Model**
+```{r}
+library(randomForest)
+set.seed(1995)
+rfFit <- train(classe ~ ., method = "rf", data = training, trControl = trainControl(method = "cv", number = 5), importance = TRUE)
+rfPred <- predict(rfFit, newdata = testing)
+rfCM <- confusionMatrix(rfPred, testing$classe)
+rfCM$table
+```
+
+#### **Model comparison:**
+```{r}
+accuracy <- data.frame(Model = c("CART", "GBM", "RF"),
+                       Accuracy = rbind(cartCM$overall[1], gbmCM$overall[1], rfCM$overall[1]))
+accuracy
+```
+Random Forest Model has the best out of sample accuracy of about 99.3% followed by the Gradient Boosting Tree Model of about 96.3%. The CART decision tree model has a low 51.5% out of sample accuracy. We use the highest out of sample accuracy, the Random Forest Model, for the prediction.
+
+
+## *Prediction* 
+
+*Evaluate the prediction to the original test data*
+```{r}
+prediction <- predict(rfFit, newdata = testData)
+prediction
+```
